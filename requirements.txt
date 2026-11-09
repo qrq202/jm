@@ -1,0 +1,9 @@
+streamlit
+pymupdf
+openai
+crewai
+streamlit-agraph
+python-docx
+pillow
+requests
+pdf2zh
