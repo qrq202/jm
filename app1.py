@@ -21,16 +21,19 @@ from openai import OpenAI
 st.set_page_config(
     page_title="Sci-Mentor 科研辅助系统", 
     layout="wide",
-    initial_sidebar_state="expanded" # 默认展开侧边栏
+    initial_sidebar_state="expanded" 
 )
 
-# 隐藏默认菜单和右上角工具栏，保留极简学术风
 st.markdown("""
     <style>
-    [data-testid="stToolbar"] { display: none !important; }
-    #MainMenu { display: none !important; }
-    footer { display: none !important; }
-    [data-testid="stStatusWidget"] { display: none !important; } /* 隐藏右下角悬浮头像 */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    
+    [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        color: #1F3A5F !important;
+    }
     
     .stApp { 
         background-color: #F7F9FC; 
@@ -60,7 +63,6 @@ st.markdown("""
         border-bottom: 2px solid #1F3A5F !important;
     }
     
-    /* 修复按钮文字消失问题 */
     .stButton>button {
         border-radius: 4px;
         background-color: #1F3A5F !important;
@@ -76,26 +78,6 @@ st.markdown("""
     }
     .stButton>button p, .stButton>button div {
         color: #FFFFFF !important;
-    }
-    
-    /* 统一 Slider 颜色为学术蓝 */
-    .stSlider [data-baseweb="slider"] div[role="slider"] {
-        background-color: #1F3A5F !important;
-        border-color: #1F3A5F !important;
-    }
-    .stSlider [data-baseweb="slider"] > div:nth-child(2) {
-        background: #1F3A5F !important;
-    }
-    .stSlider [data-testid="stTickBar"] > div {
-        background-color: #D1D5DB !important;
-    }
-    .stSlider div[data-testid="stSliderThumbValue"] {
-        color: #1F3A5F !important;
-    }
-
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-        border-radius: 4px;
-        border: 1px solid #D1D5DB;
     }
     
     .workflow-text {
@@ -116,12 +98,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 侧边栏配置 (从 Secrets 读取)
+# 2. 侧边栏配置
 # ==========================================
 with st.sidebar:
     st.subheader("系统环境配置")
     
-    # 尝试从 st.secrets 读取默认值，如果在本地跑没有 secrets 文件，则默认为空
     try:
         default_ds_key = st.secrets["DEEPSEEK_API_KEY"]
         default_am_token = st.secrets["AMINER_TOKEN"]
@@ -132,7 +113,7 @@ with st.sidebar:
     deepseek_key = st.text_input("DeepSeek API Key", value=default_ds_key, type="password")
     aminer_token = st.text_input("AMiner Token", value=default_am_token, type="password")
     limit_num = st.slider("单次检索文献上限", 1, 10, 3)
-    st.caption("注：云端已预设测试凭证，可直接运行。若失效请在左侧填入您的 Key。")
+    st.caption("注：系统已预设测试凭证，若失效请在左侧填入您的 Key。")
 
 def init_llm(key):
     return LLM(model="deepseek/deepseek-chat", base_url="https://api.deepseek.com", api_key=key, temperature=0.1)
@@ -175,7 +156,7 @@ def draw_graph(data_list):
 # ==========================================
 # 3. 主界面 Tabs
 # ==========================================
-t2, t1, t4, t3 = st.tabs(["1. 宏观检索与寻宝", "2. 本地文献精读", "3. 课题方案生成", "4. 排版翻译"])
+t2, t1, t4, t3 = st.tabs(["1. 宏观检索与寻宝", "2. 本地文献精读", "3. 课题方案生成", "4. 工业级排版翻译"])
 
 # --- Tab 2: 在线挖掘 ---
 with t2:
@@ -201,7 +182,6 @@ with t2:
             
             with st.spinner("正在查询数据库并交叉比对..."):
                 try:
-                    # 抓取 AMiner
                     a_url = "https://datacenter.aminer.cn/gateway/open_platform/api/paper/search/pro"
                     a_res = requests.get(a_url, params={"page": 0, "size": max(limit_num*2, 5), "title": query}, headers={"Authorization": aminer_token}).json()
                     for p in a_res.get("data", []):
@@ -209,7 +189,6 @@ with t2:
                         if len(abs_text) > 20:
                             raw_data.append({"src": "AMiner", "title": p.get('title', ''), "venue": p.get('venue_name', ''), "doi": p.get('doi', ''), "id": p.get('id', ''), "abs": abs_text})
                     
-                    # 抓取 PubMed
                     p_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={query}&format=json&pageSize={max(limit_num*2, 5)}&resultType=core"
                     p_res = requests.get(p_url).json()
                     for p in p_res.get("resultList", {}).get("result", []):
@@ -226,7 +205,6 @@ with t2:
                                     pass
                             raw_data.append({"src": tag, "title": p.get('title', ''), "venue": p.get('journalTitle', ''), "doi": p.get('doi', ''), "id": p.get('id', ''), "abs": abs_text})
                     
-                    # 过滤去重
                     filtered, titles_seen = [], set()
                     for p in raw_data:
                         t_low = p['title'].lower().strip()
@@ -374,10 +352,12 @@ with t4:
             st.markdown(res)
             st.download_button("导出研究方案", data=res, file_name="proposal.md", type="primary")
 
-# --- Tab 3: 翻译 ---
+# --- Tab 3: 翻译 (完整满血版) ---
 with t3:
     st.subheader("学术文献原位排版翻译")
-    f_trans = st.file_uploader("上传英文文献 PDF", type=["pdf"])
+    st.info("💡 提示：本模块调用工业级排版引擎 `pdf2zh`，首次运行需下载模型，请耐心等待。")
+    
+    f_trans = st.file_uploader("上传英文文献 PDF", type=["pdf"], key="trans_uploader")
     
     if st.button("执行翻译", key="btn_trans"):
         if not deepseek_key or not f_trans:
@@ -393,23 +373,39 @@ with t3:
                 env["OPENAI_API_KEY"] = deepseek_key
                 
                 try:
-                    subprocess.run(["pdf2zh", in_path, "-s", "openai:deepseek-chat", "-o", tmpdir], capture_output=True, text=True, env=env, timeout=600)
+                    cmd = ["pdf2zh", in_path, "-s", "openai:deepseek-chat", "-o", tmpdir]
+                    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
+                    
+                    if result.returncode != 0:
+                        st.error(f"翻译引擎执行失败，可能云端网络无法下载模型。请在本地运行体验。\n错误信息: {result.stderr}")
+                        st.stop()
                     
                     out_files = os.listdir(tmpdir)
                     zh_path, dual_path = None, None
+                    
+                    # 🌟 核心修复：兼容 -mono (纯中) 和 -dual (双语) 以及 -zh
                     for fn in out_files:
-                        if fn.endswith("-zh.pdf"): zh_path = os.path.join(tmpdir, fn)
-                        elif fn.endswith("-dual.pdf"): dual_path = os.path.join(tmpdir, fn)
+                        if not fn.endswith(".pdf") or fn == "in.pdf": continue
+                        f_lower = fn.lower()
+                        if "dual" in f_lower:
+                            dual_path = os.path.join(tmpdir, fn)
+                        elif "mono" in f_lower or "zh" in f_lower:
+                            zh_path = os.path.join(tmpdir, fn)
+                            
                     if not zh_path and not dual_path:
                         for fn in out_files:
                             if fn.endswith(".pdf") and fn != "in.pdf": dual_path = os.path.join(tmpdir, fn)
 
                     if zh_path or dual_path:
-                        st.success("翻译处理完成")
+                        st.success("翻译处理完成！图表与排版已完美保留。")
                         c1, c2 = st.columns(2)
-                        if zh_path: c1.download_button("下载纯中文版", data=open(zh_path, "rb").read(), file_name="Translated_ZH.pdf")
-                        if dual_path: c2.download_button("下载双语对照版", data=open(dual_path, "rb").read(), file_name="Translated_Dual.pdf")
+                        if zh_path: 
+                            c1.download_button("下载纯中文版", data=open(zh_path, "rb").read(), file_name="Translated_ZH.pdf", type="primary")
+                        if dual_path: 
+                            c2.download_button("下载双语对照版", data=open(dual_path, "rb").read(), file_name="Translated_Dual.pdf")
                     else:
-                        st.error("未找到翻译输出文件")
+                        st.error("未找到翻译输出文件，可能由于云端内存溢出或引擎内部错误。")
+                except subprocess.TimeoutExpired:
+                    st.error("执行超时。云端服务器算力受限。")
                 except Exception as e:
-                    st.error(f"执行超时或失败: {e}")
+                    st.error(f"执行异常: {e}")
